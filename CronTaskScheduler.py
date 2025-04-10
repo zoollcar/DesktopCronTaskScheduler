@@ -11,6 +11,7 @@ import pystray
 from PIL import Image, ImageDraw
 
 CONFIG_FILE = "tasks.json"
+HISTORY_FILE = "task_history.log"
 
 
 class CronTaskScheduler:
@@ -21,15 +22,30 @@ class CronTaskScheduler:
 
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
 
-        self.task_frame = Frame(self.root)
-        self.task_frame.pack(fill=BOTH, expand=True)
+        self.canvas = Canvas(self.root)
+        self.scrollbar = Scrollbar(
+            self.root, orient=VERTICAL, command=self.canvas.yview
+        )
+        self.task_frame = Frame(self.canvas)
+        self.task_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
+        )
+
+        self.canvas.create_window((0, 0), window=self.task_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.canvas.pack(side=LEFT, fill=BOTH, expand=True)
+        self.scrollbar.pack(side=RIGHT, fill=Y)
 
         self.add_task_button = Button(
             self.root, text="Add Task", command=self.add_task_ui
         )
         self.add_task_button.pack(pady=5)
 
-        self.save_button = Button(self.root, text="Save Tasks", command=self.save_tasks)
+        self.save_button = Button(
+            self.root, text="Save Tasks", command=self.save_and_reload_tasks
+        )
         self.save_button.pack(pady=5)
 
         self.example_label = Text(self.root, height=6, wrap=WORD)
@@ -62,12 +78,13 @@ class CronTaskScheduler:
     def hide_window(self):
         self.root.withdraw()
 
-    def show_window(self, icon, item):
+    def show_window(self, icon=None, item=None):
         self.root.after(0, self.root.deiconify)
 
     def quit_app(self, icon, item):
-        icon.stop()
         self.root.quit()
+        self.root.destroy()
+        icon.stop()
 
     def add_task_ui(self, task=None):
         frame = Frame(self.task_frame, bd=2, relief=SUNKEN, pady=5)
@@ -101,36 +118,63 @@ class CronTaskScheduler:
         next_run_label = Label(frame, text="Next run: calculating...", fg="blue")
         next_run_label.pack(anchor=W, padx=5, pady=2)
 
+        delete_button = Button(
+            frame,
+            text="Delete Task",
+            fg="red",
+            command=lambda: self.delete_task(task_data),
+        )
+        delete_button.pack(pady=2)
+
         task_data = {
             "cron_entry": cron_entry,
             "cmd_entry": cmd_entry,
             "folder_entry": folder_entry,
             "frame": frame,
             "next_run_label": next_run_label,
+            "next_run": None,
         }
+
+        def update_next_run(*args):
+            try:
+                expr = cron_entry.get().strip()
+                task_data["next_run"] = croniter(expr, datetime.now()).get_next(
+                    datetime
+                )
+                next_run_label.config(
+                    text=f"Next run: {task_data['next_run'].strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+            except Exception:
+                task_data["next_run"] = None
+                next_run_label.config(text="Invalid cron expression")
+
+        cron_entry.bind("<KeyRelease>", update_next_run)
 
         if task:
             cron_entry.delete(0, END)
             cron_entry.insert(0, task["cron"].strip())
             cmd_entry.insert(0, task["command"])
             folder_entry.insert(0, task["folder"])
-            try:
-                task_data["next_run"] = croniter(
-                    task["cron"].strip(), datetime.now()
-                ).get_next(datetime)
-            except Exception as e:
-                print(f"Invalid cron expression: {e}")
-                task_data["next_run"] = None
-        else:
-            task_data["next_run"] = None
+            update_next_run()
 
         self.tasks.append(task_data)
+
+    def delete_task(self, task_data):
+        task_data["frame"].destroy()
+        self.tasks.remove(task_data)
 
     def browse_folder(self, entry):
         folder = filedialog.askdirectory()
         if folder:
             entry.delete(0, END)
             entry.insert(0, folder)
+
+    def save_and_reload_tasks(self):
+        self.save_tasks()
+        for task in self.tasks:
+            task["frame"].destroy()
+        self.tasks.clear()
+        self.load_tasks()
 
     def save_tasks(self):
         data = []
@@ -142,7 +186,7 @@ class CronTaskScheduler:
                 data.append({"cron": cron, "command": command, "folder": folder})
         with open(CONFIG_FILE, "w") as f:
             json.dump(data, f, indent=4)
-        messagebox.showinfo("Saved", "Tasks saved successfully!")
+        messagebox.showinfo("Saved", "Tasks saved successfully! Reloaded.")
 
     def load_tasks(self):
         if os.path.exists(CONFIG_FILE):
@@ -153,6 +197,12 @@ class CronTaskScheduler:
                         self.add_task_ui(task)
                 except json.JSONDecodeError:
                     messagebox.showerror("Error", "Invalid JSON in config file")
+
+    def log_execution(self, command, folder):
+        with open(HISTORY_FILE, "a") as f:
+            f.write(
+                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Executed: {command} in {folder}\n"
+            )
 
     def task_runner(self):
         while True:
@@ -168,12 +218,14 @@ class CronTaskScheduler:
                             target=self.run_command,
                             args=(task["cmd_entry"].get(), task["folder_entry"].get()),
                         ).start()
+                        self.log_execution(
+                            task["cmd_entry"].get(), task["folder_entry"].get()
+                        )
                         task["next_run"] = croniter(cron_expr, now).get_next(datetime)
                     task["next_run_label"].config(
                         text=f"Next run: {task['next_run'].strftime('%Y-%m-%d %H:%M:%S')}"
                     )
-                except (ValueError, CroniterBadCronError) as e:
-                    print(f"Invalid cron expression: {e}")
+                except (ValueError, CroniterBadCronError):
                     task["next_run_label"].config(text="Invalid cron expression")
             time.sleep(30)
 
@@ -195,7 +247,9 @@ class CronTaskScheduler:
             pystray.MenuItem("Show", self.show_window, default=True),
             pystray.MenuItem("Quit", self.quit_app),
         )
+
         icon = pystray.Icon("CronTaskScheduler", image, "Cron Scheduler", menu)
+
         icon.run()
 
 
