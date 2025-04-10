@@ -10,6 +10,9 @@
 
 Cron Task Scheduler is a lightweight Python desktop application that lets you define and execute scheduled tasks using standard 5-field cron expressions. You can specify commands and their working directories, view the next run time, and minimize the app to the system tray.
 
+<img width="499" alt="Snipaste_2025-04-10_10-53-32" src="https://github.com/user-attachments/assets/cfda9502-3f7a-407b-af2e-f7dda0389ca2" />
+
+
 ## Features
 
 - Add multiple cron-based scheduled tasks
@@ -57,6 +60,8 @@ MIT License
 ## 简介
 
 定时任务调度器 是一个轻量级的 Python 桌面程序，允许你通过标准的 5 字段 Cron 表达式来设置并执行定时任务。你可以指定命令及其工作目录，查看下次运行时间，并将程序最小化到系统托盘。
+
+<img width="499" alt="Snipaste_2025-04-10_10-53-32" src="https://github.com/user-attachments/assets/cfda9502-3f7a-407b-af2e-f7dda0389ca2" />
 
 ## 功能特色
 
