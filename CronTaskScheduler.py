@@ -9,6 +9,7 @@ from tkinter import messagebox, filedialog
 from croniter import croniter, CroniterBadCronError
 import pystray
 from PIL import Image, ImageDraw
+import math
 
 CONFIG_FILE = "tasks.json"
 HISTORY_FILE = "task_history.log"
@@ -26,29 +27,53 @@ class CronTaskScheduler:
         self.scrollbar = Scrollbar(
             self.root, orient=VERTICAL, command=self.canvas.yview
         )
-        self.task_frame = Frame(self.canvas)
-        self.task_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
-        )
+        self.main_frame = Frame(self.root)
+        self.main_frame.pack(fill=BOTH, expand=True)
 
-        self.canvas.create_window((0, 0), window=self.task_frame, anchor="nw")
+        # 滚动区域容器（固定高度）
+        self.scroll_container = Frame(self.main_frame, height=300)
+        self.scroll_container.pack(fill=X, padx=10, pady=5)
+
+        self.canvas = Canvas(self.scroll_container, height=300)
+        self.scrollbar = Scrollbar(
+            self.scroll_container, orient=VERTICAL, command=self.canvas.yview
+        )
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
 
-        self.canvas.pack(side=LEFT, fill=BOTH, expand=True)
         self.scrollbar.pack(side=RIGHT, fill=Y)
+        self.canvas.pack(side=LEFT, fill=BOTH, expand=True)
 
+        self.task_frame = Frame(self.canvas)
+        self.canvas_window = self.canvas.create_window(
+            (0, 0), window=self.task_frame, anchor="nw"
+        )
+
+        # 自动同步 task_frame 宽度
+        self.canvas.bind(
+            "<Configure>",
+            lambda e: self.canvas.itemconfig(self.canvas_window, width=e.width),
+        )
+
+        # 鼠标滚轮支持
+        self.canvas.bind_all(
+            "<MouseWheel>",
+            lambda event: self.canvas.yview_scroll(
+                int(-1 * (event.delta / 120)), "units"
+            ),
+        )
+
+        # 添加按钮和说明区域（在 task_frame 下方）
         self.add_task_button = Button(
-            self.root, text="Add Task", command=self.add_task_ui
+            self.main_frame, text="Add Task", command=self.add_task_ui
         )
         self.add_task_button.pack(pady=5)
 
         self.save_button = Button(
-            self.root, text="Save Tasks", command=self.save_and_reload_tasks
+            self.main_frame, text="Save Tasks", command=self.save_and_reload_tasks
         )
         self.save_button.pack(pady=5)
 
-        self.example_label = Text(self.root, height=6, wrap=WORD)
+        self.example_label = Text(self.main_frame, height=6, wrap=WORD)
         self.example_label.insert(
             END, "Examples (cron format: min hour day month weekday):\n"
         )
@@ -67,7 +92,7 @@ class CronTaskScheduler:
         self.example_label.config(state=DISABLED)
         self.example_label.pack(fill=BOTH, padx=10, pady=(0, 10))
 
-        self.status_frame = Frame(self.root)
+        self.status_frame = Frame(self.main_frame)
         self.status_frame.pack(fill=X, padx=5)
 
         self.load_tasks()
@@ -88,17 +113,17 @@ class CronTaskScheduler:
 
     def add_task_ui(self, task=None):
         frame = Frame(self.task_frame, bd=2, relief=SUNKEN, pady=5)
-        frame.pack(fill=X, padx=5, pady=5)
+        frame.pack(fill="x", padx=5, pady=5, expand=True)
 
         cron_label = Label(frame, text="Cron Expression (min hour day month weekday):")
         cron_label.pack(anchor=W)
-        cron_entry = Entry(frame, width=50)
+        cron_entry = Entry(frame)
         cron_entry.insert(0, "* * * * *")
         cron_entry.pack(fill=X, padx=5)
 
         cmd_label = Label(frame, text="Command:")
         cmd_label.pack(anchor=W)
-        cmd_entry = Entry(frame, width=50)
+        cmd_entry = Entry(frame)
         cmd_entry.pack(fill=X, padx=5)
 
         folder_label = Label(frame, text="Folder:")
@@ -106,7 +131,7 @@ class CronTaskScheduler:
         folder_frame = Frame(frame)
         folder_frame.pack(fill=X, padx=5)
 
-        folder_entry = Entry(folder_frame, width=40)
+        folder_entry = Entry(folder_frame)
         folder_entry.pack(side=LEFT, fill=X, expand=True)
         browse_button = Button(
             folder_frame,
@@ -238,10 +263,18 @@ class CronTaskScheduler:
             print(f"Command execution failed: {e}")
 
     def create_tray_icon(self):
-        image = Image.new("RGB", (64, 64), color="white")
+        image = Image.new("RGB", (64, 64), color="lightblue")
         draw = ImageDraw.Draw(image)
-        draw.rectangle((0, 0, 63, 63), fill="lightblue")
-        draw.text((10, 20), "CRON", fill="black")
+        draw.ellipse((8, 8, 56, 56), outline="black", width=2)
+        for angle in range(0, 360, 30):
+            x_outer = 32 + 22 * math.cos(math.radians(angle))
+            y_outer = 32 + 22 * math.sin(math.radians(angle))
+            x_inner = 32 + 18 * math.cos(math.radians(angle))
+            y_inner = 32 + 18 * math.sin(math.radians(angle))
+            draw.line((x_inner, y_inner, x_outer, y_outer), fill="black", width=1)
+        draw.line((32, 32, 32, 16), fill="black", width=3)
+        draw.line((32, 32, 44, 32), fill="black", width=2)
+        draw.ellipse((30, 30, 34, 34), fill="black")
 
         menu = pystray.Menu(
             pystray.MenuItem("Show", self.show_window, default=True),
